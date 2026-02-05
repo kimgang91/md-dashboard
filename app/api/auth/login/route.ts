@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { signToken } from '@/lib/auth'
 import { getRecords } from '@/lib/airtable'
 
+// 연락처에서 뒷자리 4자리 추출
+function extractLast4Digits(phone: string): string {
+  if (!phone) return ''
+  // 숫자만 추출
+  const digits = phone.replace(/\D/g, '')
+  // 뒷자리 4자리 반환
+  return digits.slice(-4)
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json()
@@ -13,26 +22,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 에어테이블에서 MD 정보 조회
-    // MD 테이블에 email, password, name, role 필드가 있다고 가정
-    const records = await getRecords('MD', {
-      filterByFormula: `{email} = "${email}"`,
+    // 데모 계정 체크 (에어테이블 연결 전 테스트용)
+    if (email === 'demo@test.com' && password === 'demo1234') {
+      const demoUser = {
+        id: 'demo-user',
+        email: 'demo@test.com',
+        name: '데모 MD',
+        role: 'md'
+      }
+      const token = signToken(demoUser)
+      return NextResponse.json({ token, user: demoUser })
+    }
+
+    // 에어테이블 "MD 마스터 DB" 테이블에서 MD 정보 조회
+    // "이메일" 필드로 검색
+    const records = await getRecords('MD 마스터 DB', {
+      filterByFormula: `{이메일} = "${email}"`,
       maxRecords: 1
     })
 
     if (records.length === 0) {
-      // 데모 계정 체크 (에어테이블 연결 전 테스트용)
-      if (email === 'demo@test.com' && password === 'demo1234') {
-        const demoUser = {
-          id: 'demo-user',
-          email: 'demo@test.com',
-          name: '데모 MD',
-          role: 'md'
-        }
-        const token = signToken(demoUser)
-        return NextResponse.json({ token, user: demoUser })
-      }
-      
       return NextResponse.json(
         { message: '등록되지 않은 이메일입니다.' },
         { status: 401 }
@@ -40,21 +49,25 @@ export async function POST(request: NextRequest) {
     }
 
     const mdRecord = records[0]
-    const storedPassword = mdRecord.fields.password
+    
+    // "연락처" 필드에서 뒷자리 4자리 추출하여 비밀번호로 사용
+    const phoneNumber = mdRecord.fields['연락처'] || mdRecord.fields.연락처 || ''
+    const expectedPassword = extractLast4Digits(phoneNumber)
 
-    // 실제 운영시에는 bcrypt로 비밀번호 해시 비교
-    if (password !== storedPassword) {
+    // 비밀번호 확인 (연락처 뒷자리 4자리)
+    if (password !== expectedPassword) {
       return NextResponse.json(
-        { message: '비밀번호가 일치하지 않습니다.' },
+        { message: '비밀번호가 일치하지 않습니다. (연락처 뒷자리 4자리)' },
         { status: 401 }
       )
     }
 
+    // 사용자 정보 구성
     const user = {
       id: mdRecord.id,
-      email: mdRecord.fields.email,
-      name: mdRecord.fields.name || mdRecord.fields.이름 || '담당자',
-      role: mdRecord.fields.role || 'md'
+      email: mdRecord.fields['이메일'] || mdRecord.fields.이메일 || email,
+      name: mdRecord.fields['이름'] || mdRecord.fields.이름 || mdRecord.fields['MD명'] || mdRecord.fields.MD명 || '담당자',
+      role: mdRecord.fields['역할'] || mdRecord.fields.role || 'md'
     }
 
     const token = signToken(user)
