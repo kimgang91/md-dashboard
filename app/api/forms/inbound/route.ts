@@ -53,10 +53,11 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // 에어테이블 "인바운드 캠핑장 DB" 테이블에서 로그인한 MD 이름과 일치하는 내역 조회
+    // 에어테이블 "인바운드 캠핑장 DB" 테이블에서 로그인한 MD 이름(담당MD)과 일치하는 내역 조회
+    // "MD이름" 필드와 로그인한 MD의 이름을 매칭
     const records = await getRecords('인바운드 캠핑장 DB', {
-      filterByFormula: `{담당MD} = "${user.name}"`,
-      sort: [{ field: '인입일자', direction: 'desc' }]
+      filterByFormula: `{MD이름} = "${user.name}"`,
+      sort: [{ field: '캠지기 인입시간', direction: 'desc' }]
     })
 
     return NextResponse.json({ records })
