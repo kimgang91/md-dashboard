@@ -19,7 +19,11 @@ interface FormRecord {
   }
 }
 
-// 에어테이블 폼 URL - "인바운드 캠핑장 영업 현황 업데이트 하기" 폼
+// 영업 결과 상태값
+const STATUS_VALUES = ['대기중', '검토중', '입점예정', '입점완료', '거절'] as const
+type StatusType = typeof STATUS_VALUES[number]
+
+// 에어테이블 폼 URL
 const AIRTABLE_FORM_URL = 'https://airtable.com/appOpUJvUVEMcGUxq/pagjSZlXG3vuxgas2'
 
 export default function InboundFormPage() {
@@ -49,21 +53,26 @@ export default function InboundFormPage() {
     }
   }
 
-  const getResultBadge = (result: string) => {
-    const styles: Record<string, string> = {
-      '미팅예정': 'bg-blue-100 text-blue-700',
-      '미팅완료': 'bg-indigo-100 text-indigo-700',
-      '계약진행중': 'bg-amber-100 text-amber-700',
-      '계약완료': 'bg-green-100 text-green-700',
-      '입점완료': 'bg-green-100 text-green-700',
-      '보류': 'bg-slate-100 text-slate-700',
-      '거절': 'bg-red-100 text-red-700',
-      '컨택중': 'bg-blue-100 text-blue-700',
-      '컨택완료': 'bg-indigo-100 text-indigo-700',
-      '영업중': 'bg-amber-100 text-amber-700',
-      '미진행': 'bg-slate-100 text-slate-700',
+  // 배열에서 최신 값(마지막 값) 가져오기
+  const getLatestValue = (value: string | string[] | undefined): string => {
+    if (!value) return '-'
+    if (Array.isArray(value)) {
+      // 배열의 마지막 값 (최신 값)
+      return value.length > 0 ? value[value.length - 1] : '-'
     }
-    return styles[result] || 'bg-slate-100 text-slate-700'
+    return value
+  }
+
+  // 상태별 배지 스타일
+  const getStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      '대기중': 'bg-slate-100 text-slate-700',
+      '검토중': 'bg-blue-100 text-blue-700',
+      '입점예정': 'bg-amber-100 text-amber-700',
+      '입점완료': 'bg-green-100 text-green-700',
+      '거절': 'bg-red-100 text-red-700',
+    }
+    return styles[status] || 'bg-slate-100 text-slate-700'
   }
 
   // 날짜/시간 포맷팅
@@ -88,12 +97,52 @@ export default function InboundFormPage() {
     window.open(AIRTABLE_FORM_URL, '_blank')
   }
 
-  // 연결된 필드 값 가져오기 (배열일 수 있음)
-  const getLinkedValue = (value: string | string[] | undefined) => {
-    if (!value) return '-'
-    if (Array.isArray(value)) return value[0] || '-'
-    return value
+  // 통계 계산
+  const getStats = () => {
+    const statusCounts: Record<string, number> = {
+      '대기중': 0,
+      '검토중': 0,
+      '입점예정': 0,
+      '입점완료': 0,
+      '거절': 0,
+    }
+
+    records.forEach(record => {
+      const status = getLatestValue(record.fields['영업 결과 (from MD 인바운드 결과 DB)'])
+      if (status in statusCounts) {
+        statusCounts[status]++
+      } else if (status !== '-') {
+        // 매핑되지 않은 상태는 대기중으로
+        statusCounts['대기중']++
+      }
+    })
+
+    const total = records.length
+    const completed = statusCounts['입점완료']
+    const inProgress = statusCounts['검토중'] + statusCounts['입점예정']
+    const rejected = statusCounts['거절']
+    const waiting = statusCounts['대기중']
+
+    // 성사율 계산 (입점완료 / (입점완료 + 거절) * 100)
+    const closedDeals = completed + rejected
+    const successRate = closedDeals > 0 ? ((completed / closedDeals) * 100).toFixed(1) : '0.0'
+
+    // 진행율 계산 (입점완료 + 입점예정 / 전체)
+    const progressRate = total > 0 ? (((completed + statusCounts['입점예정']) / total) * 100).toFixed(1) : '0.0'
+
+    return {
+      total,
+      statusCounts,
+      completed,
+      inProgress,
+      rejected,
+      waiting,
+      successRate,
+      progressRate
+    }
   }
+
+  const stats = getStats()
 
   return (
     <DashboardLayout>
@@ -118,6 +167,91 @@ export default function InboundFormPage() {
           </button>
         </div>
 
+        {/* 분석 대시보드 */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* 전체 */}
+          <div className="glass-card rounded-xl p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500 mb-1">전체 인바운드</p>
+                <p className="text-3xl font-bold text-slate-800">{stats.total}</p>
+              </div>
+              <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* 성사율 */}
+          <div className="glass-card rounded-xl p-5 bg-gradient-to-br from-green-50 to-emerald-50">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-green-600 mb-1">성사율</p>
+                <p className="text-3xl font-bold text-green-700">{stats.successRate}%</p>
+                <p className="text-xs text-green-500 mt-1">입점완료 / (완료+거절)</p>
+              </div>
+              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* 진행율 */}
+          <div className="glass-card rounded-xl p-5 bg-gradient-to-br from-blue-50 to-indigo-50">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-blue-600 mb-1">진행율</p>
+                <p className="text-3xl font-bold text-blue-700">{stats.progressRate}%</p>
+                <p className="text-xs text-blue-500 mt-1">(입점완료+예정) / 전체</p>
+              </div>
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {/* 입점완료 */}
+          <div className="glass-card rounded-xl p-5 bg-gradient-to-br from-emerald-50 to-teal-50">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-emerald-600 mb-1">입점완료</p>
+                <p className="text-3xl font-bold text-emerald-700">{stats.completed}</p>
+              </div>
+              <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 상태별 현황 */}
+        <div className="glass-card rounded-2xl p-6">
+          <h3 className="text-lg font-semibold text-slate-800 mb-4">상태별 현황</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+            {STATUS_VALUES.map(status => (
+              <div key={status} className="text-center p-4 rounded-xl bg-slate-50">
+                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusBadge(status)}`}>
+                  {status}
+                </span>
+                <p className="text-2xl font-bold text-slate-800 mt-2">
+                  {stats.statusCounts[status]}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {stats.total > 0 ? ((stats.statusCounts[status] / stats.total) * 100).toFixed(0) : 0}%
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Info Card */}
         <div className="glass-card rounded-xl p-4 bg-blue-50 border border-blue-200">
           <div className="flex items-start gap-3">
@@ -131,32 +265,6 @@ export default function InboundFormPage() {
                 폼 작성 후 "새로고침" 버튼을 눌러주세요.
               </p>
             </div>
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="glass-card rounded-xl p-4">
-            <p className="text-sm text-slate-500">전체 인바운드</p>
-            <p className="text-2xl font-bold text-slate-800">{records.length}</p>
-          </div>
-          <div className="glass-card rounded-xl p-4">
-            <p className="text-sm text-slate-500">영업 진행중</p>
-            <p className="text-2xl font-bold text-amber-600">
-              {records.filter(r => {
-                const result = getLinkedValue(r.fields['영업 결과 (from MD 인바운드 결과 DB)'])
-                return result === '영업중' || result === '컨택중' || result === '미팅예정'
-              }).length}
-            </p>
-          </div>
-          <div className="glass-card rounded-xl p-4">
-            <p className="text-sm text-slate-500">입점 완료</p>
-            <p className="text-2xl font-bold text-green-600">
-              {records.filter(r => {
-                const result = getLinkedValue(r.fields['영업 결과 (from MD 인바운드 결과 DB)'])
-                return result === '입점완료' || result === '계약완료'
-              }).length}
-            </p>
           </div>
         </div>
 
@@ -208,38 +316,43 @@ export default function InboundFormPage() {
                     </td>
                   </tr>
                 ) : (
-                  records.map((record) => (
-                    <tr key={record.id} className="table-row">
-                      <td className="px-4 py-4 font-medium text-slate-800">
-                        {record.fields.캠핑장명 || '-'}
-                      </td>
-                      <td className="px-4 py-4 text-slate-600">
-                        {record.fields.지역 || '-'}
-                      </td>
-                      <td className="px-4 py-4 text-slate-600">
-                        {record.fields.대표자명 || '-'}
-                      </td>
-                      <td className="px-4 py-4 text-slate-600">
-                        {record.fields.연락처 || '-'}
-                      </td>
-                      <td className="px-4 py-4 text-slate-600">
-                        {record.fields.인입경로 || '-'}
-                      </td>
-                      <td className="px-4 py-4 text-center">
-                        {getLinkedValue(record.fields['영업 결과 (from MD 인바운드 결과 DB)']) !== '-' ? (
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getResultBadge(getLinkedValue(record.fields['영업 결과 (from MD 인바운드 결과 DB)']))}`}>
-                            {getLinkedValue(record.fields['영업 결과 (from MD 인바운드 결과 DB)'])}
-                          </span>
-                        ) : '-'}
-                      </td>
-                      <td className="px-4 py-4 text-slate-600 text-sm">
-                        {formatDateTime(record.fields['캠지기 인입시간'])}
-                      </td>
-                      <td className="px-4 py-4 text-slate-600 text-sm">
-                        {formatDateTime(getLinkedValue(record.fields['MD 입력 시간 (from MD 인바운드 결과 DB)']))}
-                      </td>
-                    </tr>
-                  ))
+                  records.map((record) => {
+                    const latestStatus = getLatestValue(record.fields['영업 결과 (from MD 인바운드 결과 DB)'])
+                    const latestMDTime = getLatestValue(record.fields['MD 입력 시간 (from MD 인바운드 결과 DB)'])
+                    
+                    return (
+                      <tr key={record.id} className="table-row">
+                        <td className="px-4 py-4 font-medium text-slate-800">
+                          {record.fields.캠핑장명 || '-'}
+                        </td>
+                        <td className="px-4 py-4 text-slate-600">
+                          {record.fields.지역 || '-'}
+                        </td>
+                        <td className="px-4 py-4 text-slate-600">
+                          {record.fields.대표자명 || '-'}
+                        </td>
+                        <td className="px-4 py-4 text-slate-600">
+                          {record.fields.연락처 || '-'}
+                        </td>
+                        <td className="px-4 py-4 text-slate-600">
+                          {record.fields.인입경로 || '-'}
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          {latestStatus !== '-' ? (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(latestStatus)}`}>
+                              {latestStatus}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-4 py-4 text-slate-600 text-sm">
+                          {formatDateTime(record.fields['캠지기 인입시간'])}
+                        </td>
+                        <td className="px-4 py-4 text-slate-600 text-sm">
+                          {formatDateTime(latestMDTime)}
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>
