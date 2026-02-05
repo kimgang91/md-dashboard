@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken, getTokenFromHeader } from '@/lib/auth'
 import { createRecord, getRecords } from '@/lib/airtable'
 
-// 인바운드결과 폼 조회
+// 인바운드결과 폼 조회 - "인바운드 캠핑장 DB" 테이블 연동
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization')
@@ -53,7 +53,8 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const records = await getRecords('인바운드결과', {
+    // 에어테이블 "인바운드 캠핑장 DB" 테이블에서 로그인한 MD 이름과 일치하는 내역 조회
+    const records = await getRecords('인바운드 캠핑장 DB', {
       filterByFormula: `{담당MD} = "${user.name}"`,
       sort: [{ field: '인입일자', direction: 'desc' }]
     })

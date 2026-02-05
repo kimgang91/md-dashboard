@@ -63,10 +63,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 사용자 정보 구성
+    // "담당MD" 필드에서 이름 가져오기
     const user = {
       id: mdRecord.id,
       email: mdRecord.fields['이메일'] || mdRecord.fields.이메일 || email,
-      name: mdRecord.fields['이름'] || mdRecord.fields.이름 || mdRecord.fields['MD명'] || mdRecord.fields.MD명 || '담당자',
+      name: mdRecord.fields['담당MD'] || mdRecord.fields.담당MD || mdRecord.fields['이름'] || mdRecord.fields.이름 || '담당자',
       role: mdRecord.fields['역할'] || mdRecord.fields.role || 'md'
     }
 
