@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken, getTokenFromHeader } from '@/lib/auth'
-import { createRecord, getRecords } from '@/lib/airtable'
+import { createRecord, getRecords, updateRecord } from '@/lib/airtable'
 
-// 라이브(입점) 완료폼 조회
+// 라이브(입점) 완료 조회
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization')
@@ -24,23 +24,41 @@ export async function GET(request: NextRequest) {
           {
             id: 'live1',
             fields: {
-              업체명: '캠핑장 A',
-              입점완료일: '2025-01-15',
-              담당MD: '데모 MD',
-              라이브URL: 'https://example.com/camping-a',
-              특이사항: '정상 오픈'
+              접수일자: '2026-01-15',
+              '캠핑장 이름': '해피캠핑장',
+              등급: 'A',
+              유형: '캠핑장',
+              MD이름: '데모 MD',
+              입점유형: '신규',
+              가입플랜: 'Premium',
+              '수수료(%, vat포함)': '10%',
+              경로: '직접영업',
+              비고: '',
+              'MD 성과급': 200000,
+              '관리자 성과급': null,
+              '관리자 비고': ''
             }
           }
         ]
       })
     }
 
-    const records = await getRecords('라이브완료', {
-      filterByFormula: `{담당MD} = "${user.name}"`,
-      sort: [{ field: '입점완료일', direction: 'desc' }]
-    })
+    let records
+    
+    // 관리자는 모든 데이터 조회
+    if (user.role === 'admin') {
+      records = await getRecords('라이브(입점) 완료', {
+        sort: [{ field: '접수일자', direction: 'desc' }]
+      })
+    } else {
+      // 일반 MD는 본인 데이터만 조회
+      records = await getRecords('라이브(입점) 완료', {
+        filterByFormula: `{MD이름} = "${user.name}"`,
+        sort: [{ field: '접수일자', direction: 'desc' }]
+      })
+    }
 
-    return NextResponse.json({ records })
+    return NextResponse.json({ records, userRole: user.role })
   } catch (error: any) {
     console.error('Live complete fetch error:', error)
     return NextResponse.json(
@@ -50,7 +68,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// 라이브(입점) 완료폼 제출
+// 라이브(입점) 완료 제출/수정
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization')
@@ -67,39 +85,88 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.json()
 
-    // 필수 필드 검증
-    if (!formData.업체명 || !formData.입점완료일) {
-      return NextResponse.json(
-        { message: '필수 항목을 모두 입력해주세요.' },
-        { status: 400 }
-      )
-    }
-
     // 데모 사용자용
-    if (user.id === 'demo-user') {
+    if (user.id === 'demo-user' || user.id === 'admin-user') {
       return NextResponse.json({
         success: true,
-        message: '라이브 완료 폼이 제출되었습니다. (데모 모드)',
+        message: '저장되었습니다. (데모 모드)',
         record: { id: 'demo-' + Date.now(), fields: formData }
       })
     }
 
-    const record = await createRecord('라이브완료', {
+    const record = await createRecord('라이브(입점) 완료', {
       ...formData,
-      담당MD: user.name,
-      담당MD_ID: user.id,
+      MD이름: user.name,
       제출일시: new Date().toISOString()
     })
 
     return NextResponse.json({
       success: true,
-      message: '라이브 완료 폼이 제출되었습니다.',
+      message: '저장되었습니다.',
       record
     })
   } catch (error: any) {
     console.error('Live complete submit error:', error)
     return NextResponse.json(
-      { message: '폼 제출 중 오류가 발생했습니다.' },
+      { message: '저장 중 오류가 발생했습니다.' },
+      { status: 500 }
+    )
+  }
+}
+
+// 성과급 업데이트 (PATCH)
+export async function PATCH(request: NextRequest) {
+  try {
+    const authHeader = request.headers.get('authorization')
+    const token = getTokenFromHeader(authHeader)
+    
+    if (!token) {
+      return NextResponse.json({ message: '인증이 필요합니다.' }, { status: 401 })
+    }
+
+    const user = verifyToken(token)
+    if (!user) {
+      return NextResponse.json({ message: '유효하지 않은 토큰입니다.' }, { status: 401 })
+    }
+
+    const { recordId, fields } = await request.json()
+
+    if (!recordId) {
+      return NextResponse.json({ message: '레코드 ID가 필요합니다.' }, { status: 400 })
+    }
+
+    // 데모/관리자 사용자용
+    if (user.id === 'demo-user' || user.id === 'admin-user') {
+      return NextResponse.json({
+        success: true,
+        message: '업데이트되었습니다. (데모 모드)',
+        record: { id: recordId, fields }
+      })
+    }
+
+    // 관리자만 관리자 필드 수정 가능
+    const allowedFields: Record<string, any> = {}
+    
+    if (user.role === 'admin') {
+      // 관리자는 모든 필드 수정 가능
+      if (fields['관리자 성과급'] !== undefined) allowedFields['관리자 성과급'] = fields['관리자 성과급']
+      if (fields['관리자 비고'] !== undefined) allowedFields['관리자 비고'] = fields['관리자 비고']
+    }
+    
+    // MD는 본인 성과급만 수정 가능
+    if (fields['MD 성과급'] !== undefined) allowedFields['MD 성과급'] = fields['MD 성과급']
+
+    const updatedRecord = await updateRecord('라이브(입점) 완료', recordId, allowedFields)
+
+    return NextResponse.json({
+      success: true,
+      message: '업데이트되었습니다.',
+      record: updatedRecord
+    })
+  } catch (error: any) {
+    console.error('Live complete update error:', error)
+    return NextResponse.json(
+      { message: '업데이트 중 오류가 발생했습니다.' },
       { status: 500 }
     )
   }

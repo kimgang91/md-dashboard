@@ -34,6 +34,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ token, user: demoUser })
     }
 
+    // 관리자 계정 체크
+    if (email === 'abcdd1@nextedition.co.kr' && password === 'rlarodtn3479!') {
+      const adminUser = {
+        id: 'admin-user',
+        email: 'abcdd1@nextedition.co.kr',
+        name: '관리자',
+        role: 'admin'
+      }
+      const token = signToken(adminUser)
+      return NextResponse.json({ token, user: adminUser })
+    }
+
     // 에어테이블 "MD 마스터 DB" 테이블에서 MD 정보 조회
     // "이메일" 필드로 검색
     const records = await getRecords('MD 마스터 DB', {

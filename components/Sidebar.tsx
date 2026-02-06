@@ -142,7 +142,7 @@ export default function Sidebar({ userName }: SidebarProps) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-slate-800 truncate">{userName}</p>
-              <p className="text-xs text-slate-400">MD</p>
+              <p className="text-xs text-slate-400">{userName === '관리자' ? '관리자' : 'MD'}</p>
             </div>
           </div>
           <button
